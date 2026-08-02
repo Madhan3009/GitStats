@@ -27,10 +27,10 @@ func recursiveScanFolder(folder string) []string {
 func sliceContains(slice []string, value string) bool {
 	for _, i := range slice {
 		if i == value {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 func joinSlices(existingRepo []string, newRepo []string) []string {
@@ -81,7 +81,7 @@ func scan(folder string) {
 	repo := recursiveScanFolder(folder)
 	filePath := getDotFilePath()
 	addNewSliceElementstoFile(filePath, repo)
-	fmt.Print(addNewSliceElementstoFile)
+	fmt.Printf("\nDone! Added %d new repos to %s.\n", len(repo), filePath)
 }
 func scanGitFolder(folders []string, folder string) []string {
 	folder = strings.TrimSuffix(folder, "/")

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"sort"
 	"time"
 )
 
@@ -12,69 +11,32 @@ const outOfRange = 99999
 const daysInLastSixMonths = 183
 const weeksInLastSixMonths = 26
 
-type column []int
-
 func stats(email string) {
 	commits := processRepo(email)
 	printCommitsStats(commits)
 }
+
 func printCommitsStats(commits map[int]int) {
-	keys := sortMapIntoSlice(commits)
-	cols := buildCols(keys, commits)
-	printCells(cols)
+	printCells(commits)
 }
 
-func sortMapIntoSlice(m map[int]int) []int {
-	var keys []int
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-
-	return keys
-}
-
-func buildCols(keys []int, commits map[int]int) map[int]column {
-	cols := make(map[int]column)
-	col := column{}
-
-	for _, k := range keys {
-		week := int(k / 7)
-		dayinweek := k % 7
-		if dayinweek == 0 {
-			col = column{}
-		}
-
-		col = append(col, commits[k])
-
-		if dayinweek == 6 {
-			cols[week] = col
-		}
-	}
-
-	return cols
-}
-
-func printCells(cols map[int]column) {
+func printCells(commits map[int]int) {
 	printMonths()
-	for j := 6; j >= 0; j-- {
+	todayWeekday := int(time.Now().Weekday())
+
+	for j := 0; j <= 6; j++ {
 		for i := weeksInLastSixMonths + 1; i >= 0; i-- {
 			if i == weeksInLastSixMonths+1 {
 				printDayCol(j)
 			}
-			if col, ok := cols[i]; ok {
 
-				if i == 0 && j == calcOffset()-1 {
-					printCell(col[j], true)
-					continue
-				} else {
-					if len(col) > j {
-						printCell(col[j], false)
-						continue
-					}
-				}
+			daysAgo := 7*i + (todayWeekday - j)
+			if daysAgo < 0 || daysAgo > daysInLastSixMonths {
+				fmt.Print("    ")
+			} else {
+				val := commits[daysAgo]
+				printCell(val, daysAgo == 0)
 			}
-			printCell(0, false)
 		}
 		fmt.Printf("\n")
 	}
@@ -145,29 +107,6 @@ func printCell(val int, today bool) {
 	fmt.Printf(escape+str+"\033[0m", val)
 }
 
-func calcOffset() int {
-	var offset int
-
-	weekday := time.Now().Weekday()
-	switch weekday {
-	case time.Sunday:
-		offset = 7
-	case time.Monday:
-		offset = 6
-	case time.Tuesday:
-		offset = 5
-	case time.Wednesday:
-		offset = 4
-	case time.Thursday:
-		offset = 3
-	case time.Friday:
-		offset = 2
-	case time.Saturday:
-		offset = 1
-	}
-	return offset
-}
-
 func getBeginningofDay(t time.Time) time.Time {
 	year, month, day := t.Date()
 	return time.Date(year, month, day, 0, 0, 0, 0, t.Location())
@@ -182,7 +121,6 @@ func countDaysSinceDate(date time.Time) int {
 		if days > daysInLastSixMonths {
 			return outOfRange
 		}
-
 	}
 	return days
 }
@@ -203,9 +141,8 @@ func fillCommits(email string, path string, commits map[int]int) map[int]int {
 		panic(err)
 	}
 
-	offset := calcOffset()
 	err = iterator.ForEach(func(c *object.Commit) error {
-		daysAgo := countDaysSinceDate(c.Author.When) + offset
+		daysAgo := countDaysSinceDate(c.Author.When)
 		if c.Author.Email != email {
 			return nil
 		}
@@ -224,8 +161,8 @@ func processRepo(email string) map[int]int {
 	filePath := getDotFilePath()
 	repo := parseFileintoLines(filePath)
 	daysinMap := daysInLastSixMonths
-	commits := make(map[int]int, daysinMap)
-	for i := daysinMap; i > 0; i-- {
+	commits := make(map[int]int, daysinMap+1)
+	for i := 0; i <= daysinMap; i++ {
 		commits[i] = 0
 	}
 	for _, path := range repo {

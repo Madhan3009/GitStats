@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"strings"
+	"syscall"
 )
 
 func getDotFilePath() string {
@@ -42,16 +43,18 @@ func joinSlices(existingRepo []string, newRepo []string) []string {
 	return existingRepo
 }
 
-func openSesame(filepath string) *os.File {
-	f, err := os.OpenFile(filepath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0755)
+func parseFileintoLines(filepath string) []string {
+	f, err := os.OpenFile(filepath, os.O_RDONLY|os.O_CREATE, 0755)
 	if err != nil {
 		panic(err)
 	}
-	return f
-}
+	defer f.Close()
 
-func parseFileintoLines(filepath string) []string {
-	f := openSesame(filepath)
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
+		panic(err)
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
 	scanner := bufio.NewScanner(f)
 	var entries []string
 	for scanner.Scan() {
@@ -65,15 +68,42 @@ func parseFileintoLines(filepath string) []string {
 	return entries
 }
 
-func movetoFile(repo []string, filepath string) {
-	content := strings.Join(repo, "\n")
-	os.WriteFile(filepath, []byte(content), 0755)
-}
-
 func addNewSliceElementstoFile(filepath string, newRepo []string) {
-	existingRepo := parseFileintoLines(filepath)
+	f, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		panic(err)
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
+	scanner := bufio.NewScanner(f)
+	var existingRepo []string
+	for scanner.Scan() {
+		existingRepo = append(existingRepo, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		if err != io.EOF {
+			panic(err)
+		}
+	}
+
 	repos := joinSlices(existingRepo, newRepo)
-	movetoFile(repos, filepath)
+
+	if err := f.Truncate(0); err != nil {
+		panic(err)
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		panic(err)
+	}
+
+	content := strings.Join(repos, "\n")
+	if _, err := f.WriteString(content); err != nil {
+		panic(err)
+	}
 }
 
 func scan(folder string) {
